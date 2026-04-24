@@ -1,8 +1,8 @@
-cd('F:\zhourushuang\SEED')
+cd('D:\EGG_dataset\SEED')
 label=load('label.mat');
 label=label.label;
 for i = 1:15
-    cd('F:\zhourushuang\SEED\ExtractedFeatures')
+    cd('D:\EGG_dataset\SEED\ExtractedFeatures')
     folder_list=dir('*.mat');
     file_name_session_1=folder_list(i*3-2).name;
     file_name_session_2=folder_list(i*3-1).name;
@@ -118,11 +118,11 @@ for i = 1:15
     dataset_session2.label=label_session_2+1;
     dataset_session3.feature=feature_session_3;
     dataset_session3.label=label_session_3+1;
-    cd('F:\zhourushuang\SEED\feature')
+    cd('D:\EGG_dataset\SEED\feature')
     sub=['sub_',num2str(i),'_'];
-    save([sub,'session_1','.mat'],'dataset_session1')
-    cd('F:\zhourushuang\SEED\feature')
-    save([sub,'session_2','.mat'],'dataset_session2')
-    cd('F:\zhourushuang\SEED\feature')
-    save([sub,'session_3','.mat'],'dataset_session3')
+    save('-v7', [sub, 'session_1.mat'], 'dataset_session1');
+    cd('D:\EGG_dataset\SEED\feature')
+    save('-v7',[sub,'session_2','.mat'],'dataset_session2')
+    cd('D:\EGG_dataset\SEED\feature')
+    save('-v7',[sub,'session_3','.mat'],'dataset_session3')
 end

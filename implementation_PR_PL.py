@@ -101,49 +101,42 @@ def weigth_init(m):  ## model parameter intialization
         m.bias.data.zero_()
 
 
-def get_dataset(test_id,session): ## dataloading function, you should modify this function according to your environment setting.
-    path='F:\\zhourushuang\\transfer_learning\\feature_for_net_session'+str(session)+'_LDS_de'
-    os.chdir(path)
-#    path='F:\\zhourushuang\\transfer_learning\\feature_for_net_session1_LDS_de'
-    feature_list=[]
-    label_list=[]
-    ## our label:0 negative, label:1 :neural,label:2:positive, seed original label: -1,0,1, our label= seed label+1
-    min_max_scaler = preprocessing.MinMaxScaler(feature_range = (-1, 1))
-    for info in os.listdir(path):
-        domain = os.path.abspath(path)
-        info_ = os.path.join(domain,info)
-        if session==1:
-            feature = scio.loadmat(info_)['dataset_session1']['feature'][0,0]
-            label = scio.loadmat(info_)['dataset_session1']['label'][0,0]
-        elif session==2:
-            feature = scio.loadmat(info_)['dataset_session2']['feature'][0,0]
-            label = scio.loadmat(info_)['dataset_session2']['label'][0,0]
-        else:
-            feature = scio.loadmat(info_)['dataset_session3']['feature'][0,0]
-            label = scio.loadmat(info_)['dataset_session3']['label'][0,0]
-        feature_list.append(min_max_scaler.fit_transform(feature).astype('float32')) # Variable 'feature' is a [3394, 310] DE feature matrix from SEED dataset.
-        one_hot_label_mat=np.zeros((len(label),3)) # Variable 'one_hot_label_mat' is a [3394, 3] ground-truth matrix from SEED dataset.
-        for i in range(len(label)):
-            if label[i]==0: # '0' refers to '-1 (negative emotion)' in SEED 
-                one_hot_label=[1,0,0]
-                one_hot_label=np.hstack(one_hot_label).reshape(1,3)
-                one_hot_label_mat[i,:]=one_hot_label
-            if label[i]==1: # '1' refers to '0 (neutral emotion)' in SEED 
-                one_hot_label=[0,1,0]
-                one_hot_label=np.hstack(one_hot_label).reshape(1,3)
-                one_hot_label_mat[i,:]=one_hot_label
-            if label[i]==2: # '2' refers to '1 (positive emotion)' in SEED 
-                one_hot_label=[0,0,1]
-                one_hot_label=np.hstack(one_hot_label).reshape(1,3)
-                one_hot_label_mat[i,:]=one_hot_label
+def get_dataset(test_id, session):
+    path = 'D:/EGG_dataset/SEED/feature'
+    feature_list = []
+    label_list = []
+    min_max_scaler = preprocessing.MinMaxScaler(feature_range=(-1, 1))
+    
+    for i in range(1, 16):
+        file_name = 'sub_{}_session_{}.mat'.format(i, session)
+        file_path = os.path.join(path, file_name)
+        
+        mat = scio.loadmat(file_path)
+        key = 'dataset_session{}'.format(session)
+        feature = mat[key]['feature'][0, 0]  # (3394, 310)
+        label = mat[key]['label'][0, 0]      # (3394, 1)
+        
+        feature_list.append(min_max_scaler.fit_transform(feature).astype('float32'))
+        
+        one_hot_label_mat = np.zeros((len(label), 3))
+        for j in range(len(label)):
+            val = int(label[j])
+            if val == 0:    # 负面
+                one_hot_label_mat[j] = [1, 0, 0]
+            elif val == 1:  # 中性
+                one_hot_label_mat[j] = [0, 1, 0]
+            elif val == 2:  # 正面
+                one_hot_label_mat[j] = [0, 0, 1]
         label_list.append(one_hot_label_mat.astype('float32'))
-    target_feature,target_label=feature_list[test_id],label_list[test_id]
+    
+    target_feature, target_label = feature_list[test_id], label_list[test_id]
     del feature_list[test_id]
     del label_list[test_id]
-    source_feature,source_label=np.vstack(feature_list),np.vstack(label_list)
-    target_set={'feature':target_feature,'label':target_label}
-    source_set={'feature':source_feature,'label':source_label}
-    return target_set,source_set
+    source_feature, source_label = np.vstack(feature_list), np.vstack(label_list)
+    
+    target_set = {'feature': target_feature, 'label': target_label}
+    source_set = {'feature': source_feature, 'label': source_label}
+    return target_set, source_set
 
 def get_generated_targets(model,x_s,x_t,labels_s): ## Get generated labels by threshold
         with torch.no_grad():
@@ -318,4 +311,15 @@ result_list={'best_acc_mat':best_acc_mat,
              'target_acc_curve':target_acc_curve,
              'target_nmi_curve':target_nmi_curve}
 
-    
+print("\n========== 最终结果 ==========")
+print("每个受试者最高准确率：")
+for i, acc in enumerate(best_acc_mat):
+    print(f"  受试者 {i+1:2d}: {acc*100:.2f}%")
+
+print(f"\n平均准确率：{np.mean(best_acc_mat)*100:.2f}%")
+print(f"标准差：    {np.std(best_acc_mat)*100:.2f}%")
+print(f"最终结果：  {np.mean(best_acc_mat)*100:.2f}% ± {np.std(best_acc_mat)*100:.2f}%")
+print(f"\n论文结果：  93.06% ± 5.12%")
+print(f"差距：      {abs(np.mean(best_acc_mat)*100 - 93.06):.2f}%")
+
+scio.savemat('result.mat', result_list)
