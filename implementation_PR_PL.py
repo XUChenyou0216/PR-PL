@@ -303,7 +303,7 @@ def main(update_threshold,parameter,session):
 #parameter={'hidden_1':64,'hidden_2':64,'num_of_class':4,'cluster_weight':2,'low_rank':32,'upper_threshold':0.9,'lower_threshold':0.5,'boost_type':'linear'}
 ## hyperparameter setting for the SEED dataset    
 parameter={'hidden_1':64,'hidden_2':64,'num_of_class':3,'cluster_weight':2,'low_rank':32,'upper_threshold':0.9,'lower_threshold':0.5,'boost_type':'linear'}
-best_acc_mat,cls_loss_curve,transfer_loss_curve,source_acc_curve,source_nmi_curve,target_acc_curve,target_nmi_curve=main(True,parameter,1)
+best_acc_mat,cls_loss_curve,transfer_loss_curve,source_acc_curve,source_nmi_curve,target_acc_curve,target_nmi_curve=main(True,parameter,2)
 result_list={'best_acc_mat':best_acc_mat,
              'cls_loss_curve':cls_loss_curve,
              'source_acc_curve':source_acc_curve,
@@ -322,4 +322,4 @@ print(f"最终结果：  {np.mean(best_acc_mat)*100:.2f}% ± {np.std(best_acc_ma
 print(f"\n论文结果：  93.06% ± 5.12%")
 print(f"差距：      {abs(np.mean(best_acc_mat)*100 - 93.06):.2f}%")
 
-scio.savemat('result.mat', result_list)
+scio.savemat('result_SEED_session_2.mat', result_list)
