@@ -100,39 +100,105 @@ def weigth_init(m):  ## model parameter intialization
 #        torch.nn.init.kaiming_normal_(m.weight.data,a=0,mode='fan_in',nonlinearity='relu')
         m.bias.data.zero_()
 
+# dataset loading function for the SEED dataset
+# def get_dataset(test_id, session):
+#     path = 'D:/EGG_dataset/SEED/feature'
+#     feature_list = []
+#     label_list = []
+#     min_max_scaler = preprocessing.MinMaxScaler(feature_range=(-1, 1))
+    
+#     for i in range(1, 16):
+#         file_name = 'sub_{}_session_{}.mat'.format(i, session)
+#         file_path = os.path.join(path, file_name)
+        
+#         mat = scio.loadmat(file_path)
+#         key = 'dataset_session{}'.format(session)
+#         feature = mat[key]['feature'][0, 0]  # (3394, 310)
+#         label = mat[key]['label'][0, 0]      # (3394, 1)
+        
+#         feature_list.append(min_max_scaler.fit_transform(feature).astype('float32'))
+        
+#         one_hot_label_mat = np.zeros((len(label), 3))
+#         for j in range(len(label)):
+#             val = int(label[j])
+#             if val == 0:    # 负面
+#                 one_hot_label_mat[j] = [1, 0, 0]
+#             elif val == 1:  # 中性
+#                 one_hot_label_mat[j] = [0, 1, 0]
+#             elif val == 2:  # 正面
+#                 one_hot_label_mat[j] = [0, 0, 1]
+#         label_list.append(one_hot_label_mat.astype('float32'))
+    
+#     target_feature, target_label = feature_list[test_id], label_list[test_id]
+#     del feature_list[test_id]
+#     del label_list[test_id]
+#     source_feature, source_label = np.vstack(feature_list), np.vstack(label_list)
+    
+#     target_set = {'feature': target_feature, 'label': target_label}
+#     source_set = {'feature': source_feature, 'label': source_label}
+#     return target_set, source_set
 
 def get_dataset(test_id, session):
-    path = 'D:/EGG_dataset/SEED/feature'
+    # SEED-IV 数据路径，改成你的实际路径
+    data_path = 'D:/EGG_dataset/SEED-IV/eeg_feature_smooth/{}'.format(session)
+    
+    # 三个 session 的标签（来自 README）
+    session1_label = [1,2,3,0,2,0,0,1,0,1,2,1,1,1,2,3,2,2,3,3,0,3,0,3]
+    session2_label = [2,1,3,0,0,2,0,2,3,3,2,3,2,0,1,1,2,1,0,3,0,1,3,1]
+    session3_label = [1,2,2,1,3,3,3,1,1,2,1,0,2,3,3,0,2,3,0,0,2,0,1,0]
+    label_map = {1: session1_label, 2: session2_label, 3: session3_label}
+    trial_labels = label_map[session]  # 24个trial的标签
+    
+    min_max_scaler = preprocessing.MinMaxScaler(feature_range=(-1, 1))
     feature_list = []
     label_list = []
-    min_max_scaler = preprocessing.MinMaxScaler(feature_range=(-1, 1))
     
-    for i in range(1, 16):
-        file_name = 'sub_{}_session_{}.mat'.format(i, session)
-        file_path = os.path.join(path, file_name)
-        
+    # 按受试者编号顺序读取，确保顺序一致
+    for subj_id in range(1, 16):
+        # 找到该受试者在该session下的文件
+        files = [f for f in os.listdir(data_path) 
+                 if f.startswith('{}_'.format(subj_id)) and f.endswith('.mat')]
+        if len(files) == 0:
+            print(f"警告：找不到受试者 {subj_id} 的文件")
+            continue
+        file_path = os.path.join(data_path, files[0])
         mat = scio.loadmat(file_path)
-        key = 'dataset_session{}'.format(session)
-        feature = mat[key]['feature'][0, 0]  # (3394, 310)
-        label = mat[key]['label'][0, 0]      # (3394, 1)
         
-        feature_list.append(min_max_scaler.fit_transform(feature).astype('float32'))
+        # 拼接24个trial的特征
+        feature_all = []
+        label_all = []
+        for trial_idx in range(1, 25):  # 24个trial
+            key = 'de_LDS{}'.format(trial_idx)
+            trial_data = mat[key]  # (62, T, 5)
+            T = trial_data.shape[1]
+            # 展平成310维：62通道 × 5频段
+            feat = trial_data.transpose(1, 0, 2).reshape(T, 310)  # (T, 310)
+            feature_all.append(feat)
+            # 该trial的标签
+            lbl = trial_labels[trial_idx - 1]
+            label_all.extend([lbl] * T)
         
-        one_hot_label_mat = np.zeros((len(label), 3))
-        for j in range(len(label)):
-            val = int(label[j])
-            if val == 0:    # 负面
-                one_hot_label_mat[j] = [1, 0, 0]
-            elif val == 1:  # 中性
-                one_hot_label_mat[j] = [0, 1, 0]
-            elif val == 2:  # 正面
-                one_hot_label_mat[j] = [0, 0, 1]
-        label_list.append(one_hot_label_mat.astype('float32'))
+        feature_all = np.vstack(feature_all).astype('float32')
+        label_all = np.array(label_all)
+        
+        # 归一化
+        feature_all = min_max_scaler.fit_transform(feature_all).astype('float32')
+        
+        # 转成 one-hot，4分类
+        one_hot = np.zeros((len(label_all), 4), dtype='float32')
+        for j in range(len(label_all)):
+            one_hot[j, int(label_all[j])] = 1.0
+        
+        feature_list.append(feature_all)
+        label_list.append(one_hot)
     
-    target_feature, target_label = feature_list[test_id], label_list[test_id]
+    # 留一法：test_id 那个受试者作为目标域
+    target_feature = feature_list[test_id]
+    target_label = label_list[test_id]
     del feature_list[test_id]
     del label_list[test_id]
-    source_feature, source_label = np.vstack(feature_list), np.vstack(label_list)
+    source_feature = np.vstack(feature_list)
+    source_label = np.vstack(label_list)
     
     target_set = {'feature': target_feature, 'label': target_label}
     source_set = {'feature': source_feature, 'label': source_label}
@@ -160,13 +226,20 @@ def checkpoint(model,checkpoint_PATH,flag):## saving or loading the checkpoint m
         torch.save({'P': model.P, 'stored_mat':model.stored_mat,'cluster_label':model.cluster_label,'threshold':model.threshold,
                     'upper_threshold':model.upper_threshold,'lower_threshold':model.lower_threshold,'state_dict': model.state_dict()},checkpoint_PATH)
     
+def infinite_iter(dataloader):
+    while True:
+        for batch in dataloader:
+            yield batch
+
+
 def train_model(loader_train, loader_test,model,dann_loss, optimizer,scheduler,hidden_4,epoch,batch_size,parameter,threshold_update=True): ## model training 
     # switch to train mode
     model.train()
     dann_loss.train()
-    train_source_iter, train_target_iter=enumerate(loader_train),enumerate(loader_test)
+    train_source_iter = infinite_iter(loader_train)
+    train_target_iter = infinite_iter(loader_test)
     # train_source_iter and train_target_iter is data iterator that will never stop producing data
-    T =3394//batch_size ## 3394//48
+    T =len(loader_train.dataset)//batch_size ## the number of iterations for one epoch
     cls_loss_sum=0
     transfer_loss_sum=0
     if parameter['boost_type']=='linear':
@@ -178,9 +251,9 @@ def train_model(loader_train, loader_test,model,dann_loss, optimizer,scheduler,h
     for i in range(T):  
         # loading data: x_s:source feature,x_t:target feature,labels_s:source label
         model.train()
-        _,(x_s,labels_s) = next(train_source_iter)
-        x_s,labels_s=Variable(x_s.cuda()), Variable(labels_s.cuda()) 
-        _,(x_t,_) = next(train_target_iter)
+        x_s, labels_s = next(train_source_iter)
+        x_s, labels_s = Variable(x_s.cuda()), Variable(labels_s.cuda()) 
+        x_t,_ = next(train_target_iter)
         x_t=Variable(x_t.cuda())
         estimated_sim_truth,estimated_sim_truth_target = get_generated_targets(model,x_s,x_t,labels_s)
         # estimated_sim_truth: estimated pairwise matrix for source features(batch size * batch size)
@@ -199,6 +272,7 @@ def train_model(loader_train, loader_test,model,dann_loss, optimizer,scheduler,h
         P_loss=torch.norm(torch.matmul(model.P.T,model.P)-torch.eye(hidden_4).cuda(),'fro')
         # domain adversarial loss
         transfer_loss = dann_loss(feature_source_f+0.005*torch.randn((batch_size,hidden_4)).cuda(),feature_target_f+0.005*torch.randn((batch_size,hidden_4)).cuda())
+    
         cls_loss_sum+=cls_loss.data
         transfer_loss_sum+=transfer_loss.data
         loss =cls_loss+transfer_loss+0.01*P_loss+boost_factor*cluster_loss
@@ -225,13 +299,15 @@ def train_and_test_GAN(test_id,max_iter,parameter,session,threshold_update=True)
             dataset=torch_dataset_train,
             batch_size=BATCH_SIZE,
             shuffle=True,
-            num_workers=0
+            num_workers=0,
+            drop_last=True
             )
     loader_test = Data.DataLoader(
             dataset=torch_dataset_test,
             batch_size=BATCH_SIZE,
             shuffle=True,
-            num_workers=0
+            num_workers=0,
+            drop_last=True
             )
     setup_seed(20)
     # model initialization
@@ -300,10 +376,10 @@ def main(update_threshold,parameter,session):
 ## lower_threshold: The initial lower_threshold for the non-linear dynamic threshold
 ## boost_type:linear dynamic strategy for the unsupervised pairwise learning
 ## hyperparameter setting for the SEED-IV dataset    
-#parameter={'hidden_1':64,'hidden_2':64,'num_of_class':4,'cluster_weight':2,'low_rank':32,'upper_threshold':0.9,'lower_threshold':0.5,'boost_type':'linear'}
+parameter={'hidden_1':64,'hidden_2':64,'num_of_class':4,'cluster_weight':2,'low_rank':32,'upper_threshold':0.9,'lower_threshold':0.5,'boost_type':'linear'}
 ## hyperparameter setting for the SEED dataset    
-parameter={'hidden_1':64,'hidden_2':64,'num_of_class':3,'cluster_weight':2,'low_rank':32,'upper_threshold':0.9,'lower_threshold':0.5,'boost_type':'linear'}
-best_acc_mat,cls_loss_curve,transfer_loss_curve,source_acc_curve,source_nmi_curve,target_acc_curve,target_nmi_curve=main(True,parameter,3)
+#parameter={'hidden_1':64,'hidden_2':64,'num_of_class':3,'cluster_weight':2,'low_rank':32,'upper_threshold':0.9,'lower_threshold':0.5,'boost_type':'linear'}
+best_acc_mat,cls_loss_curve,transfer_loss_curve,source_acc_curve,source_nmi_curve,target_acc_curve,target_nmi_curve=main(True,parameter,1)
 result_list={'best_acc_mat':best_acc_mat,
              'cls_loss_curve':cls_loss_curve,
              'source_acc_curve':source_acc_curve,
@@ -319,7 +395,7 @@ for i, acc in enumerate(best_acc_mat):
 print(f"\n平均准确率：{np.mean(best_acc_mat)*100:.2f}%")
 print(f"标准差：    {np.std(best_acc_mat)*100:.2f}%")
 print(f"最终结果：  {np.mean(best_acc_mat)*100:.2f}% ± {np.std(best_acc_mat)*100:.2f}%")
-print(f"\n论文结果：  93.06% ± 5.12%")
-print(f"差距：      {abs(np.mean(best_acc_mat)*100 - 93.06):.2f}%")
+print(f"\n论文结果：  81.32% ± 8.53%")
+print(f"差距：      {abs(np.mean(best_acc_mat)*100 - 81.32):.2f}%")
 
-scio.savemat('result_SEED_session_3.mat', result_list)
+scio.savemat('result_SEED_IV_session_1.mat', result_list)
