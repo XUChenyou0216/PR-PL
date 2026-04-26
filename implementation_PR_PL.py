@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 Created on Mon Mar 21 10:02:40 2022
 
@@ -100,108 +100,52 @@ def weigth_init(m):  ## model parameter intialization
 #        torch.nn.init.kaiming_normal_(m.weight.data,a=0,mode='fan_in',nonlinearity='relu')
         m.bias.data.zero_()
 
-# dataset loading function for the SEED dataset
-# def get_dataset(test_id, session):
-#     path = 'D:/EGG_dataset/SEED/feature'
-#     feature_list = []
-#     label_list = []
-#     min_max_scaler = preprocessing.MinMaxScaler(feature_range=(-1, 1))
-    
-#     for i in range(1, 16):
-#         file_name = 'sub_{}_session_{}.mat'.format(i, session)
-#         file_path = os.path.join(path, file_name)
-        
-#         mat = scio.loadmat(file_path)
-#         key = 'dataset_session{}'.format(session)
-#         feature = mat[key]['feature'][0, 0]  # (3394, 310)
-#         label = mat[key]['label'][0, 0]      # (3394, 1)
-        
-#         feature_list.append(min_max_scaler.fit_transform(feature).astype('float32'))
-        
-#         one_hot_label_mat = np.zeros((len(label), 3))
-#         for j in range(len(label)):
-#             val = int(label[j])
-#             if val == 0:    # 负面
-#                 one_hot_label_mat[j] = [1, 0, 0]
-#             elif val == 1:  # 中性
-#                 one_hot_label_mat[j] = [0, 1, 0]
-#             elif val == 2:  # 正面
-#                 one_hot_label_mat[j] = [0, 0, 1]
-#         label_list.append(one_hot_label_mat.astype('float32'))
-    
-#     target_feature, target_label = feature_list[test_id], label_list[test_id]
-#     del feature_list[test_id]
-#     del label_list[test_id]
-#     source_feature, source_label = np.vstack(feature_list), np.vstack(label_list)
-    
-#     target_set = {'feature': target_feature, 'label': target_label}
-#     source_set = {'feature': source_feature, 'label': source_label}
-#     return target_set, source_set
 
-def get_dataset(test_id, session):
-    # SEED-IV 数据路径，改成你的实际路径
-    data_path = 'D:/EGG_dataset/SEED-IV/eeg_feature_smooth/{}'.format(session)
-    
-    # 三个 session 的标签（来自 README）
-    session1_label = [1,2,3,0,2,0,0,1,0,1,2,1,1,1,2,3,2,2,3,3,0,3,0,3]
-    session2_label = [2,1,3,0,0,2,0,2,3,3,2,3,2,0,1,1,2,1,0,3,0,1,3,1]
-    session3_label = [1,2,2,1,3,3,3,1,1,2,1,0,2,3,3,0,2,3,0,0,2,0,1,0]
-    label_map = {1: session1_label, 2: session2_label, 3: session3_label}
-    trial_labels = label_map[session]  # 24个trial的标签
-    
-    min_max_scaler = preprocessing.MinMaxScaler(feature_range=(-1, 1))
+def one_hot(labels, num_classes):
+    labels = labels.reshape(-1).astype('int64')
+    encoded = np.zeros((len(labels), num_classes), dtype='float32')
+    encoded[np.arange(len(labels)), labels] = 1.0
+    return encoded
+
+
+DATASET_CACHE = {}
+
+
+def load_session_dataset(session):
+    if session in DATASET_CACHE:
+        return DATASET_CACHE[session]
+
+    data_path = 'D:/EGG_dataset/SEED-IV/feature_seediv'
+    dataset_key = 'dataset_session{}'.format(session)
+    num_subjects = 15
+    num_classes = 4
     feature_list = []
     label_list = []
-    
-    # 按受试者编号顺序读取，确保顺序一致
-    for subj_id in range(1, 16):
-        # 找到该受试者在该session下的文件
-        files = [f for f in os.listdir(data_path) 
-                 if f.startswith('{}_'.format(subj_id)) and f.endswith('.mat')]
-        if len(files) == 0:
-            print(f"警告：找不到受试者 {subj_id} 的文件")
-            continue
-        file_path = os.path.join(data_path, files[0])
+
+    for subj_id in range(1, num_subjects + 1):
+        file_name = 'sub_{}_session_{}.mat'.format(subj_id, session)
+        file_path = os.path.join(data_path, file_name)
+        if not os.path.exists(file_path):
+            raise FileNotFoundError('Cannot find SEED-IV feature file: {}'.format(file_path))
+
         mat = scio.loadmat(file_path)
-        
-        # 拼接24个trial的特征
-        feature_all = []
-        label_all = []
-        for trial_idx in range(1, 25):  # 24个trial
-            key = 'de_LDS{}'.format(trial_idx)
-            trial_data = mat[key]  # (62, T, 5)
-            T = trial_data.shape[1]
-            # 展平成310维：62通道 × 5频段
-            feat = trial_data.transpose(1, 0, 2).reshape(T, 310)  # (T, 310)
-            feature_all.append(feat)
-            # 该trial的标签
-            lbl = trial_labels[trial_idx - 1]
-            label_all.extend([lbl] * T)
-        
-        feature_all = np.vstack(feature_all).astype('float32')
-        label_all = np.array(label_all)
-        
-        # 归一化
-        feature_all = min_max_scaler.fit_transform(feature_all).astype('float32')
-        
-        # 转成 one-hot，4分类
-        one_hot = np.zeros((len(label_all), 4), dtype='float32')
-        for j in range(len(label_all)):
-            one_hot[j, int(label_all[j])] = 1.0
-        
-        feature_list.append(feature_all)
-        label_list.append(one_hot)
-    
-    # 留一法：test_id 那个受试者作为目标域
-    target_feature = feature_list[test_id]
-    target_label = label_list[test_id]
-    del feature_list[test_id]
-    del label_list[test_id]
-    source_feature = np.vstack(feature_list)
-    source_label = np.vstack(label_list)
-    
-    target_set = {'feature': target_feature, 'label': target_label}
-    source_set = {'feature': source_feature, 'label': source_label}
+        feature = mat[dataset_key]['feature'][0, 0].astype('float32')
+        label = mat[dataset_key]['label'][0, 0].astype('int64') - 1
+
+        feature_list.append(feature)
+        label_list.append(one_hot(label, num_classes))
+
+    DATASET_CACHE[session] = (feature_list, label_list)
+    return DATASET_CACHE[session]
+
+
+def get_dataset(test_id, session):
+    feature_list, label_list = load_session_dataset(session)
+    source_features = feature_list[:test_id] + feature_list[test_id + 1:]
+    source_labels = label_list[:test_id] + label_list[test_id + 1:]
+
+    target_set = {'feature': feature_list[test_id], 'label': label_list[test_id]}
+    source_set = {'feature': np.vstack(source_features), 'label': np.vstack(source_labels)}
     return target_set, source_set
 
 def get_generated_targets(model,x_s,x_t,labels_s): ## Get generated labels by threshold
@@ -238,8 +182,8 @@ def train_model(loader_train, loader_test,model,dann_loss, optimizer,scheduler,h
     dann_loss.train()
     train_source_iter = infinite_iter(loader_train)
     train_target_iter = infinite_iter(loader_test)
-    # train_source_iter and train_target_iter is data iterator that will never stop producing data
-    T =len(loader_train.dataset)//batch_size ## the number of iterations for one epoch
+    # train source and target with repeated target batches, matching the best previous SEED-IV baseline
+    T = len(loader_train.dataset)//batch_size
     cls_loss_sum=0
     transfer_loss_sum=0
     if parameter['boost_type']=='linear':
@@ -253,7 +197,7 @@ def train_model(loader_train, loader_test,model,dann_loss, optimizer,scheduler,h
         model.train()
         x_s, labels_s = next(train_source_iter)
         x_s, labels_s = Variable(x_s.cuda()), Variable(labels_s.cuda()) 
-        x_t,_ = next(train_target_iter)
+        x_t, _ = next(train_target_iter)
         x_t=Variable(x_t.cuda())
         estimated_sim_truth,estimated_sim_truth_target = get_generated_targets(model,x_s,x_t,labels_s)
         # estimated_sim_truth: estimated pairwise matrix for source features(batch size * batch size)
@@ -295,6 +239,10 @@ def train_and_test_GAN(test_id,max_iter,parameter,session,threshold_update=True)
     torch_dataset_test = Data.TensorDataset(torch.from_numpy(target_set['feature']),torch.from_numpy(target_set['label']))
     test_features,test_labels=torch.from_numpy(target_set['feature']),torch.from_numpy(target_set['label'])
     source_features,source_labels=torch.from_numpy(source_set['feature']),torch.from_numpy(source_set['label'])
+    test_features_cuda = test_features.cuda()
+    test_labels_cuda = test_labels.cuda()
+    source_features_cuda = source_features.cuda()
+    source_labels_cuda = source_labels.cuda()
     loader_train = Data.DataLoader(
             dataset=torch_dataset_train,
             batch_size=BATCH_SIZE,
@@ -317,7 +265,7 @@ def train_and_test_GAN(test_id,max_iter,parameter,session,threshold_update=True)
     domain_discriminator.apply(weigth_init)
     dann_loss = DomainAdversarialLoss(domain_discriminator).cuda()
     optimizer = RMSprop(model.get_parameters() + domain_discriminator.get_parameters(),lr=1e-3, weight_decay=1e-5)
-    lr_scheduler = StepwiseLR_GRL(optimizer, init_lr=0.001, gamma=10,decay_rate=0.75,max_iter=max_iter)
+    lr_scheduler = None
     best_acc = 0. 
     target_acc_list=np.zeros(max_iter)
     target_nmi_list=np.zeros(max_iter)
@@ -330,16 +278,17 @@ def train_and_test_GAN(test_id,max_iter,parameter,session,threshold_update=True)
         # train for one epoch
         model.train()
         cls_loss_sum,transfer_loss_sum=train_model(loader_train, loader_test,model,dann_loss, optimizer,lr_scheduler,hidden_4,epoch,BATCH_SIZE,parameter,threshold_update)
-        source_acc,source_nmi=model.cluster_label_update(source_features.cuda(),source_labels.cuda())
+        source_acc,source_nmi=model.cluster_label_update(source_features_cuda,source_labels_cuda)
         # evaluate on target domain
         model.eval()
-        target_acc,target_nmi=model.target_domain_evaluation(test_features.cuda(),test_labels.cuda())
+        target_acc,target_nmi=model.target_domain_evaluation(test_features_cuda,test_labels_cuda)
         target_acc_list[epoch]=target_acc
         source_acc_list[epoch]=source_acc
         target_nmi_list[epoch]=target_nmi
         source_nmi_list[epoch]=source_nmi
         cls_loss_list[epoch]=cls_loss_sum
         transfer_loss_list[epoch]=transfer_loss_sum
+        print('Test Subject:',test_id,'Session:',session)
         print('src:','epoch:',epoch,'acc=',source_acc,'nmi=',source_nmi)
         print('tar:','epoch:',epoch,'acc=',target_acc,'nmi=',target_nmi)
         best_acc = max(target_acc, best_acc)
@@ -379,23 +328,29 @@ def main(update_threshold,parameter,session):
 parameter={'hidden_1':64,'hidden_2':64,'num_of_class':4,'cluster_weight':2,'low_rank':32,'upper_threshold':0.9,'lower_threshold':0.5,'boost_type':'linear'}
 ## hyperparameter setting for the SEED dataset    
 #parameter={'hidden_1':64,'hidden_2':64,'num_of_class':3,'cluster_weight':2,'low_rank':32,'upper_threshold':0.9,'lower_threshold':0.5,'boost_type':'linear'}
-best_acc_mat,cls_loss_curve,transfer_loss_curve,source_acc_curve,source_nmi_curve,target_acc_curve,target_nmi_curve=main(True,parameter,1)
-result_list={'best_acc_mat':best_acc_mat,
-             'cls_loss_curve':cls_loss_curve,
-             'source_acc_curve':source_acc_curve,
-             'source_nmi_curve':source_nmi_curve,
-             'target_acc_curve':target_acc_curve,
-             'target_nmi_curve':target_nmi_curve}
+def run_session(session):
+    best_acc_mat,cls_loss_curve,transfer_loss_curve,source_acc_curve,source_nmi_curve,target_acc_curve,target_nmi_curve=main(True,parameter,session)
+    result_list={'best_acc_mat':best_acc_mat,
+                 'cls_loss_curve':cls_loss_curve,
+                 'source_acc_curve':source_acc_curve,
+                 'source_nmi_curve':source_nmi_curve,
+                 'target_acc_curve':target_acc_curve,
+                 'target_nmi_curve':target_nmi_curve}
 
-print("\n========== 最终结果 ==========")
-print("每个受试者最高准确率：")
-for i, acc in enumerate(best_acc_mat):
-    print(f"  受试者 {i+1:2d}: {acc*100:.2f}%")
+    print(f"\n========== SEED-IV Session {session} Final Result ==========")
+    print("Best accuracy for each subject:")
+    for i, acc in enumerate(best_acc_mat):
+        print(f"  Subject {i+1:2d}: {acc*100:.2f}%")
 
-print(f"\n平均准确率：{np.mean(best_acc_mat)*100:.2f}%")
-print(f"标准差：    {np.std(best_acc_mat)*100:.2f}%")
-print(f"最终结果：  {np.mean(best_acc_mat)*100:.2f}% ± {np.std(best_acc_mat)*100:.2f}%")
-print(f"\n论文结果：  81.32% ± 8.53%")
-print(f"差距：      {abs(np.mean(best_acc_mat)*100 - 81.32):.2f}%")
+    print(f"\nMean accuracy: {np.mean(best_acc_mat)*100:.2f}%")
+    print(f"Std:           {np.std(best_acc_mat)*100:.2f}%")
+    print(f"Final result:  {np.mean(best_acc_mat)*100:.2f}% +/- {np.std(best_acc_mat)*100:.2f}%")
+    print(f"\nPaper result:  81.32% +/- 8.53%")
+    print(f"Gap:           {abs(np.mean(best_acc_mat)*100 - 81.32):.2f}%")
 
-scio.savemat('result_SEED_IV_session_1.mat', result_list)
+    scio.savemat(f'result_SEED_IV_session_{session}.mat', result_list)
+
+
+if __name__ == '__main__':
+    for session in [2, 3]:
+        run_session(session)
